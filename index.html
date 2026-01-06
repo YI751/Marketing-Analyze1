@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>マーケティング・アナライズ</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Vue.js 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- Supabase JS Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Google Fonts & Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Noto Sans JP', sans-serif; background-color: #f8fafc; color: #334155; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
+        .fade-enter-from, .fade-leave-to { opacity: 0; }
+        .list-enter-active, .list-leave-active { transition: all 0.5s ease; }
+        .list-enter-from, .list-leave-to { opacity: 0; transform: translateY(20px); }
+        
+        /* Specific Visuals */
+        .swot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        @media (max-width: 768px) { .swot-grid { grid-template-columns: 1fr; } }
+        
+        /* Arrow Steps for Flows */
+        .arrow-step { position: relative; }
+        .arrow-step::after { content: 'arrow_forward'; font-family: 'Material Icons Round'; position: absolute; right: -20px; top: 50%; transform: translateY(-50%); font-size: 1.5rem; color: #cbd5e1; }
+        .arrow-step:last-child::after { content: none; }
+        @media (max-width: 768px) { 
+            .arrow-step::after { content: 'arrow_downward'; right: 50%; top: auto; bottom: -25px; transform: translateX(50%); } 
+            .arrow-step { margin-bottom: 2rem; } 
+        }
+
+        /* Typography for Japanese Text */
+        .jp-text {
+            line-height: 1.8; /* 視認性向上のため少し広げる */
+            white-space: pre-wrap; /* 生成されたテキストの改行を反映 */
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            word-break: break-all; 
+        }
+        
+        /* Logic Tree Styles */
+        .tree-connector-svg {
+            color: #cbd5e1;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen flex flex-col">
+
+<div id="app" class="flex flex-col min-h-screen">
+    
+    <!-- AUTHENTICATION CHECK -->
+    <div v-if="!user" class="flex-grow flex items-center justify-center p-4">
+        <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-slate-100">
+            <div class="text-center mb-8">
+                <div class="bg-indigo-100 p-3 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+                    <span class="material-icons-round text-3xl text-indigo-600">lock</span>
+                </div>
+                <h2 class="text-2xl font-bold text-slate-800">
+                    {{ isSignUp ? 'アカウント作成' : 'ログイン' }}
+                </h2>
+                <p class="text-slate-500 mt-2 text-sm font-medium">
+                    マーケティング・アナライズ
+                    <br>
+                    <span class="text-xs text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded mt-1 inline-block">ゲンダイエージェンシー株式会社 社内専用</span>
+                </p>
+            </div>
+
+            <form @submit.prevent="handleAuth" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-1">メールアドレス</label>
+                    <input 
+                        type="email" 
+                        name="email"
+                        autocomplete="email"
+                        list="email-domains"
+                        v-model="email"
+                        required 
+                        class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-slate-50 focus:bg-white"
+                        placeholder="name@gendai-a.co.jp"
+                    >
+                    <!-- Input Candidates Helper -->
+                    <datalist id="email-domains">
+                        <option value="@gendai-a.co.jp"></option>
+                    </datalist>
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-1">パスワード</label>
+                    <input 
+                        type="password" 
+                        name="password"
+                        autocomplete="current-password"
+                        v-model="password"
+                        required 
+                        class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-slate-50 focus:bg-white"
+                        placeholder="••••••••"
+                    >
+                </div>
+
+                <div v-if="authMessage" :class="`p-3 rounded-lg text-sm flex items-start gap-2 ${authMessageType === 'error' ? 'bg-red-50 text-red-700 border border-red-100' : 'bg-green-50 text-green-700 border border-green-100'}`">
+                    <span class="material-icons-round text-sm mt-0.5">{{ authMessageType === 'error' ? 'error_outline' : 'check_circle_outline' }}</span>
+                    <span>{{ authMessage }}</span>
+                </div>
+
+                <button 
+                    type="submit" 
+                    :disabled="authLoading"
+                    class="w-full py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm"
+                >
+                    <div v-if="authLoading" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    {{ isSignUp ? '登録する' : 'ログイン' }}
+                </button>
+            </form>
+
+            <div class="mt-6 text-center pt-4 border-t border-slate-100">
+                <button 
+                    @click="toggleAuthMode"
+                    class="text-sm text-indigo-600 hover:text-indigo-800 font-bold transition"
+                >
+                    {{ isSignUp ? 'すでにアカウントをお持ちの方はこちら' : 'アカウントをお持ちでない方はこちら' }}
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN APP CONTENT (Only shown if user is logged in) -->
+    <div v-else class="flex flex-col min-h-screen">
+        <!-- Header -->
+        <header class="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-40">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex justify-between items-center">
+                <div class="flex items-center gap-3">
+                    <div class="bg-indigo-600 text-white p-1.5 rounded-lg shadow-sm">
+                        <span class="material-icons-round text-xl">analytics</span>
+                    </div>
+                    <h1 class="text-xl font-bold text-slate-800 tracking-tight hidden sm:block">マーケティング・アナライズ</h1>
+                    <h1 class="text-lg font-bold text-slate-800 tracking-tight sm:hidden">マーケティング・アナライズ</h1>
+                </div>
+                
+                <div class="flex items-center gap-4">
+                    <div class="hidden md:flex flex-col items-end">
+                        <span class="text-xs text-slate-500 font-bold">Login as</span>
+                        <span class="text-xs text-indigo-600 font-mono">{{ user.email }}</span>
+                    </div>
+                    <button @click="handleLogout" class="bg-slate-100 hover:bg-slate-200 text-slate-600 p-2 rounded-lg transition-colors flex items-center gap-2" title="ログアウト">
+                        <span class="material-icons-round text-sm">logout</span>
+                        <span class="text-xs font-bold hidden sm:inline">ログアウト</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <main class="flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+            
+            <!-- Toast Notification -->
+            <transition name="fade">
+                <div v-if="toast.show" class="fixed top-24 right-5 z-50 bg-slate-800 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 max-w-sm pointer-events-none">
+                    <span class="material-icons-round text-green-400" v-if="toast.type === 'success'">check_circle</span>
+                    <span class="material-icons-round text-red-400" v-else>error</span>
+                    <div class="text-sm font-medium">{{ toast.message }}</div>
+                </div>
+            </transition>
+
+            <!-- INPUT SECTION -->
+            <section class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="p-6 md:p-8">
+                    <div class="flex flex-col lg:flex-row gap-8">
+                        <!-- Left: Basic Info -->
+                        <div class="flex-1 space-y-6">
+                            <div class="flex justify-between items-center pb-4 border-b border-slate-100">
+                                <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                    <span class="bg-indigo-100 text-indigo-600 p-1 rounded flex items-center justify-center"><span class="material-icons-round text-sm">edit_note</span></span>
+                                    分析データ入力
+                                </h2>
+                                <!-- Model Selection Hidden -->
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-500 mb-1.5">企業名 / サービス名 <span class="text-slate-400 font-normal ml-1">(任意)</span></label>
+                                    <input type="text" v-model="targetName" class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition bg-white" placeholder="例: 株式会社○○○">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-500 mb-1.5">提案先企業 URL</label>
+                                    <input type="text" v-model="targetUrl" class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition bg-white" placeholder="https://client-site.com">
+                                </div>
+                            </div>
+                            <div class="bg-slate-50 p-5 rounded-lg border border-slate-200">
+                                 <h3 class="text-xs font-bold text-slate-600 mb-3 flex items-center">
+                                    <span class="material-icons-round text-sm mr-1.5 text-slate-400">compare_arrows</span>
+                                    競合比較データ (任意)
+                                 </h3>
+                                 <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    <input type="text" v-model="competitor1" class="w-full text-xs border border-slate-300 rounded px-3 py-2 outline-none focus:border-indigo-500 bg-white" placeholder="競合1: 企業名/URL">
+                                    <input type="text" v-model="competitor2" class="w-full text-xs border border-slate-300 rounded px-3 py-2 outline-none focus:border-indigo-500 bg-white" placeholder="競合2: 企業名/URL">
+                                    <input type="text" v-model="competitor3" class="w-full text-xs border border-slate-300 rounded px-3 py-2 outline-none focus:border-indigo-500 bg-white" placeholder="競合3: 企業名/URL">
+                                 </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-500 mb-1.5">参考サイト URL <span class="text-slate-400 font-normal ml-1">(任意)</span></label>
+                                <input type="text" v-model="referenceUrl" class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5 outline-none focus:border-indigo-500 bg-white" placeholder="https://reference.com">
+                            </div>
+                        </div>
+                        <!-- Right: Details -->
+                        <div class="flex-1 flex flex-col gap-6">
+                            <div class="flex-grow">
+                                <label class="block text-xs font-bold text-slate-500 mb-1.5">事業詳細・分析に関する要望・補足</label>
+                                <textarea v-model="details" class="w-full h-48 lg:h-full text-sm border border-slate-300 rounded-lg px-4 py-3 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 resize-y bg-slate-50" placeholder="Webサイト解析だけではわからない、独自の強みやターゲット詳細をここに入力すると、より精度の高い分析が可能になります。また、分析に対する具体的な要望（例：若年層向けの施策を重視したい）もこちらに入力してください。"></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Buttons -->
+                    <div class="mt-8 pt-6 border-t border-slate-100">
+                        <h2 class="font-bold text-slate-800 text-sm flex items-center mb-4">
+                            <span class="material-icons-round text-indigo-500 mr-2 text-base">psychology</span>
+                            ■各種マーケティング分析を実行
+                        </h2>
+                        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+                            <!-- Env -->
+                            <button @click="analyze('SWOT')" :disabled="isLoading" class="bg-white border border-slate-300 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-300 text-slate-700 text-sm font-medium py-2.5 px-3 rounded-lg transition shadow-sm flex items-center justify-center disabled:opacity-50">クロスSWOT</button>
+                            <button @click="analyze('PEST')" :disabled="isLoading" class="bg-white border border-slate-300 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-300 text-slate-700 text-sm font-medium py-2.5 px-3 rounded-lg transition shadow-sm flex items-center justify-center disabled:opacity-50">PEST分析</button>
+                            <button @click="analyze('5F')" :disabled="isLoading" class="bg-white border border-slate-300 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-300 text-slate-700 text-sm font-medium py-2.5 px-3 rounded-lg transition shadow-sm flex items-center justify-center disabled:opacity-50">5F分析</button>
+                            <button @click="analyze('3C')" :disabled="isLoading" class="bg-white border border-slate-300 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-300 text-slate-700 text-sm font-medium py-2.5 px-3 rounded-lg transition shadow-sm flex items-center justify-center disabled:opacity-50">3C分析</button>
+                            
+                            <!-- Strategy -->
+                            <button @click="analyze('STP')" :disabled="isLoading" class="bg-white border border-slate-300 hover:bg-purple-50 hover:text-purple-700 hover:border-purple-300 text-slate-700 text-sm font-medium py-2.5 px-3 rounded-lg transition shadow-sm flex items-center justify-center disabled:opacity-50">STP分析</button>
+                            <button @click="analyze('4P4C')" :disabled="isLoading" class="bg-white border border-slate-300 hover:bg-purple-50 hover:text-purple-700 hover:border-purple-300 text-slate-700 text-sm font-medium py-2.5 px-3 rounded-lg transition shadow-sm flex items-center justify-center disabled:opacity-50">4P & 4C</button>
+                            <button @click="analyze('VALUES')" :disabled="isLoading" class="bg-white border border-slate-300 hover:bg-purple-50 hover:text-purple-700 hover:border-purple-300 text-slate-700 text-xs font-medium py-2.5 px-3 rounded-lg transition shadow-sm flex items-center justify-center disabled:opacity-50">機能価値・情緒価値・社会的価値</button>
+                            <button @click="analyze('LOGIC')" :disabled="isLoading" class="bg-white border border-slate-300 hover:bg-purple-50 hover:text-purple-700 hover:border-purple-300 text-slate-700 text-sm font-medium py-2.5 px-3 rounded-lg transition shadow-sm flex items-center justify-center disabled:opacity-50">ロジックツリー</button>
+                            
+                            <!-- Behavior -->
+                            <button @click="analyze('AISAS')" :disabled="isLoading" class="bg-white border border-slate-300 hover:bg-green-50 hover:text-green-700 hover:border-green-300 text-slate-700 text-sm font-medium py-2.5 px-3 rounded-lg transition shadow-sm flex items-center justify-center disabled:opacity-50">AISAS</button>
+                            <button @click="analyze('AIDMA')" :disabled="isLoading" class="bg-white border border-slate-300 hover:bg-green-50 hover:text-green-700 hover:border-green-300 text-slate-700 text-sm font-medium py-2.5 px-3 rounded-lg transition shadow-sm flex items-center justify-center disabled:opacity-50">AIDMA</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- RESULTS SECTION -->
+            <section id="results-area" class="min-h-[200px] pb-20">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold text-slate-800 flex items-center">
+                        <span class="bg-slate-800 text-white p-1 rounded mr-3 flex items-center justify-center"><span class="material-icons-round text-sm">description</span></span>
+                        分析レポート
+                    </h2>
+                    <button v-if="results.length > 0" @click="clearResults" class="text-xs text-slate-500 hover:text-red-600 transition flex items-center gap-2 bg-white border border-slate-300 px-4 py-2 rounded-lg shadow-sm hover:shadow-md">
+                        <span class="material-icons-round text-sm">delete_outline</span>
+                        結果をクリア
+                    </button>
+                </div>
+
+                <transition name="fade">
+                    <div v-if="isLoading" class="bg-white border border-indigo-100 rounded-xl p-12 flex flex-col items-center justify-center shadow-lg shadow-indigo-50 mb-8 animate-pulse">
+                        <div class="loader mb-5 border-t-indigo-500 border-slate-200 w-12 h-12 border-4 rounded-full animate-spin"></div>
+                        <h3 class="text-xl font-bold text-slate-700">マーケティング分析を実行中...</h3>
+                        <p class="text-slate-500 mt-2">入力された内容を基に解析しています。</p>
+                    </div>
+                </transition>
+
+                <div class="space-y-8">
+                    <transition-group name="list">
+                        <div v-for="(res, index) in results" :key="res.id" class="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden ring-1 ring-black/5">
+                            <div class="bg-slate-50 border-b border-slate-200 px-6 py-4 flex flex-wrap justify-between items-center gap-3">
+                                <div class="flex items-center gap-3">
+                                    <span class="bg-indigo-600 text-white text-xs font-bold px-3 py-1 rounded shadow-sm uppercase tracking-wide">{{ res.type_label }}</span>
+                                    <div class="text-xs text-slate-400 font-mono">{{ res.timestamp }}</div>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button @click="downloadCSV(res)" class="text-slate-600 hover:text-green-600 px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 border border-slate-300 bg-white hover:bg-green-50 shadow-sm">
+                                        <span class="material-icons-round text-sm">download</span>CSV
+                                    </button>
+                                    <button @click="toggleEdit(index)" class="text-slate-600 hover:text-indigo-600 px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 border border-slate-300 bg-white hover:bg-indigo-50 shadow-sm">
+                                        <span class="material-icons-round text-sm">{{ res.isEditing ? 'save' : 'edit' }}</span>{{ res.isEditing ? '保存' : '編集' }}
+                                    </button>
+                                    <button @click="removeResult(index)" class="text-slate-400 hover:text-red-500 p-2 rounded transition hover:bg-red-50">
+                                        <span class="material-icons-round text-base">close</span>
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div class="p-6 md:p-8 bg-white min-h-[300px]">
+                                <!-- EDIT MODE -->
+                                <div v-if="res.isEditing" class="space-y-6">
+                                    <div class="bg-indigo-50 px-4 py-3 rounded-lg border border-indigo-100 text-indigo-800 text-sm font-bold flex items-center gap-2 mb-6">
+                                        <span class="material-icons-round text-sm">info</span>
+                                        各項目を編集してください。保存するとビジュアルに反映されます。
+                                    </div>
+                                    <div v-for="(value, key) in res.data" :key="key" class="space-y-2">
+                                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wide">{{ formatKey(key) }}</label>
+                                        <textarea v-if="Array.isArray(value)" :value="value.join('\n')" @input="updateArrayData(res, key, $event.target.value)" class="w-full p-3 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none min-h-[100px]"></textarea>
+                                        <textarea v-else-if="typeof value === 'object'" :value="JSON.stringify(value, null, 2)" @input="updateObjectData(res, key, $event.target.value)" class="w-full p-3 border border-slate-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 outline-none min-h-[100px]"></textarea>
+                                        <textarea v-else v-model="res.data[key]" class="w-full p-3 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none min-h-[80px]"></textarea>
+                                    </div>
+                                </div>
+
+                                <!-- VIEW MODE (Visuals) -->
+                                <div v-else class="space-y-6">
+                                    <!-- SWOT (No Markdown) -->
+                                    <div v-if="res.type === 'SWOT'">
+                                        <div class="swot-grid mb-8">
+                                            <div class="bg-red-50 p-5 rounded-xl border border-red-100"><h3 class="text-red-700 font-bold mb-3 flex items-center gap-2">強み <span class="text-[10px] text-red-300 font-normal uppercase">Strengths</span></h3><ul class="list-disc list-inside space-y-2 text-sm text-slate-700 jp-text"><li v-for="item in res.data.strengths">{{ cleanText(item) }}</li></ul></div>
+                                            <div class="bg-blue-50 p-5 rounded-xl border border-blue-100"><h3 class="text-blue-700 font-bold mb-3 flex items-center gap-2">弱み <span class="text-[10px] text-blue-300 font-normal uppercase">Weaknesses</span></h3><ul class="list-disc list-inside space-y-2 text-sm text-slate-700 jp-text"><li v-for="item in res.data.weaknesses">{{ cleanText(item) }}</li></ul></div>
+                                            <div class="bg-green-50 p-5 rounded-xl border border-green-100"><h3 class="text-green-700 font-bold mb-3 flex items-center gap-2">機会 <span class="text-[10px] text-green-300 font-normal uppercase">Opportunities</span></h3><ul class="list-disc list-inside space-y-2 text-sm text-slate-700 jp-text"><li v-for="item in res.data.opportunities">{{ cleanText(item) }}</li></ul></div>
+                                            <div class="bg-orange-50 p-5 rounded-xl border border-orange-100"><h3 class="text-orange-700 font-bold mb-3 flex items-center gap-2">脅威 <span class="text-[10px] text-orange-300 font-normal uppercase">Threats</span></h3><ul class="list-disc list-inside space-y-2 text-sm text-slate-700 jp-text"><li v-for="item in res.data.threats">{{ cleanText(item) }}</li></ul></div>
+                                        </div>
+                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4"><div v-for="(val, key) in res.data.strategies" class="bg-white border border-slate-200 p-4 rounded-lg shadow-sm"><div class="text-xs font-bold text-slate-400 uppercase mb-1">{{ formatKey(key) }}</div><p class="text-sm text-slate-700 jp-text">{{ cleanText(val) }}</p></div></div>
+                                    </div>
+
+                                    <!-- PEST -->
+                                    <div v-else-if="res.type === 'PEST'" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                        <div class="bg-white border-t-4 border-slate-500 p-5 rounded-lg shadow-sm"><h3 class="font-bold text-slate-700 mb-2 flex items-center gap-2">政治 <span class="text-[10px] text-slate-300 font-normal uppercase">Politics</span></h3><p class="text-sm text-slate-600 jp-text">{{ cleanText(res.data.politics) }}</p></div>
+                                        <div class="bg-white border-t-4 border-green-500 p-5 rounded-lg shadow-sm"><h3 class="font-bold text-slate-700 mb-2 flex items-center gap-2">経済 <span class="text-[10px] text-green-300 font-normal uppercase">Economy</span></h3><p class="text-sm text-slate-600 jp-text">{{ cleanText(res.data.economy) }}</p></div>
+                                        <div class="bg-white border-t-4 border-blue-500 p-5 rounded-lg shadow-sm"><h3 class="font-bold text-slate-700 mb-2 flex items-center gap-2">社会 <span class="text-[10px] text-blue-300 font-normal uppercase">Society</span></h3><p class="text-sm text-slate-600 jp-text">{{ cleanText(res.data.society) }}</p></div>
+                                        <div class="bg-white border-t-4 border-purple-500 p-5 rounded-lg shadow-sm"><h3 class="font-bold text-slate-700 mb-2 flex items-center gap-2">技術 <span class="text-[10px] text-purple-300 font-normal uppercase">Technology</span></h3><p class="text-sm text-slate-600 jp-text">{{ cleanText(res.data.technology) }}</p></div>
+                                    </div>
+
+                                    <!-- 5F -->
+                                    <div v-else-if="res.type === '5F'" class="relative p-2">
+                                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-stretch">
+                                            <!-- Top Row / Left in Mobile -->
+                                            <div class="md:col-start-2 bg-red-50 p-4 rounded-lg border-l-4 border-red-400 shadow-sm flex flex-col">
+                                                <h4 class="font-bold text-red-800 text-sm mb-2 flex items-center"><span class="material-icons-round text-sm mr-1">arrow_downward</span>新規参入の脅威</h4>
+                                                <p class="text-xs text-slate-700 jp-text flex-grow">{{ cleanText(res.data.new_entrants) }}</p>
+                                            </div>
+                                            
+                                            <!-- Middle Row -->
+                                            <div class="md:col-start-1 bg-orange-50 p-4 rounded-lg border-l-4 border-orange-400 shadow-sm flex flex-col">
+                                                <h4 class="font-bold text-orange-800 text-sm mb-2 flex items-center"><span class="material-icons-round text-sm mr-1">arrow_forward</span>売り手の交渉力</h4>
+                                                <p class="text-xs text-slate-700 jp-text flex-grow">{{ cleanText(res.data.suppliers) }}</p>
+                                            </div>
+                                            
+                                            <!-- Center (Rivalry) -->
+                                            <div class="bg-gradient-to-br from-slate-100 to-white p-5 rounded-xl border-2 border-slate-300 shadow-md flex flex-col items-center justify-center text-center relative overflow-hidden min-h-[160px]">
+                                                <div class="absolute inset-0 bg-slate-200 opacity-10 rounded-xl"></div>
+                                                <h4 class="font-bold text-slate-800 text-base mb-2 z-10">業界内の競争</h4>
+                                                <p class="text-xs text-slate-600 jp-text z-10">{{ cleanText(res.data.rivalry) }}</p>
+                                            </div>
+                                            
+                                            <div class="bg-blue-50 p-4 rounded-lg border-l-4 border-blue-400 shadow-sm flex flex-col">
+                                                <h4 class="font-bold text-blue-800 text-sm mb-2 flex items-center"><span class="material-icons-round text-sm mr-1">arrow_back</span>買い手の交渉力</h4>
+                                                <p class="text-xs text-slate-700 jp-text flex-grow">{{ cleanText(res.data.buyers) }}</p>
+                                            </div>
+
+                                            <!-- Bottom Row -->
+                                            <div class="md:col-start-2 bg-purple-50 p-4 rounded-lg border-l-4 border-purple-400 shadow-sm flex flex-col">
+                                                <h4 class="font-bold text-purple-800 text-sm mb-2 flex items-center"><span class="material-icons-round text-sm mr-1">arrow_upward</span>代替品の脅威</h4>
+                                                <p class="text-xs text-slate-700 jp-text flex-grow">{{ cleanText(res.data.substitutes) }}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- 3C -->
+                                    <div v-else-if="res.type === '3C'">
+                                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                                            <div class="bg-white border-t-4 border-blue-500 p-5 rounded-lg shadow-sm"><h3 class="text-center font-bold text-slate-800 mb-4 flex items-center justify-center gap-2">市場・顧客 <span class="text-[10px] text-slate-300 font-normal uppercase">Customer</span></h3><ul class="space-y-2 text-sm text-slate-600 jp-text"><li v-for="item in res.data.customer" class="flex items-start gap-2"><span class="text-blue-500 mt-1">•</span>{{ cleanText(item) }}</li></ul></div>
+                                            <div class="bg-white border-t-4 border-red-500 p-5 rounded-lg shadow-sm"><h3 class="text-center font-bold text-slate-800 mb-4 flex items-center justify-center gap-2">競合 <span class="text-[10px] text-slate-300 font-normal uppercase">Competitor</span></h3><ul class="space-y-2 text-sm text-slate-600 jp-text"><li v-for="item in res.data.competitor" class="flex items-start gap-2"><span class="text-red-500 mt-1">•</span>{{ cleanText(item) }}</li></ul></div>
+                                            <div class="bg-white border-t-4 border-green-500 p-5 rounded-lg shadow-sm"><h3 class="text-center font-bold text-slate-800 mb-4 flex items-center justify-center gap-2">自社 <span class="text-[10px] text-slate-300 font-normal uppercase">Company</span></h3><ul class="space-y-2 text-sm text-slate-600 jp-text"><li v-for="item in res.data.company" class="flex items-start gap-2"><span class="text-green-500 mt-1">•</span>{{ cleanText(item) }}</li></ul></div>
+                                        </div>
+                                        <div class="bg-indigo-50 p-4 rounded-lg border border-indigo-100 text-center"><h3 class="text-indigo-800 font-bold mb-1">勝ち筋 (KFS)</h3><p class="text-slate-700 text-sm jp-text">{{ cleanText(res.data.winning_zone) }}</p></div>
+                                    </div>
+
+                                    <!-- STP -->
+                                    <div v-else-if="res.type === 'STP'" class="space-y-4">
+                                        <div class="flex flex-col md:flex-row gap-4">
+                                            <div class="flex-1 bg-indigo-50 p-4 rounded-lg border-l-4 border-indigo-500 shadow-sm">
+                                                <div class="text-xs font-bold text-indigo-500 uppercase mb-2">セグメンテーション</div>
+                                                <p class="text-sm text-slate-700 jp-text">{{ cleanText(res.data.segmentation) }}</p>
+                                            </div>
+                                            <div class="flex-1 bg-blue-50 p-4 rounded-lg border-l-4 border-blue-500 shadow-sm">
+                                                <div class="text-xs font-bold text-blue-500 uppercase mb-2">ターゲティング</div>
+                                                <p class="text-sm text-slate-700 jp-text">{{ cleanText(res.data.targeting) }}</p>
+                                            </div>
+                                            <div class="flex-1 bg-green-50 p-4 rounded-lg border-l-4 border-green-500 shadow-sm">
+                                                <div class="text-xs font-bold text-green-500 uppercase mb-2">ポジショニング</div>
+                                                <p class="text-sm text-slate-700 jp-text">{{ cleanText(res.data.positioning) }}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- 4P/4C -->
+                                    <div v-else-if="res.type === '4P4C'" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div v-for="key in ['product', 'price', 'place', 'promotion']" :key="key" class="bg-white border border-slate-200 rounded-lg p-5 shadow-sm hover:shadow-md transition">
+                                            <template v-if="res.data[key]">
+                                                <div class="flex items-center gap-2 mb-3 pb-2 border-b border-slate-100">
+                                                    <span class="bg-indigo-100 text-indigo-700 text-xs font-bold px-2 py-0.5 rounded uppercase">{{ formatKey(key) }}</span>
+                                                </div>
+                                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    <div class="text-left">
+                                                        <div class="text-[10px] text-slate-400 font-bold uppercase mb-1">売り手 (4P)</div>
+                                                        <p class="text-sm text-slate-700 font-medium jp-text">{{ cleanText(res.data[key].p) }}</p>
+                                                    </div>
+                                                    <div class="text-left">
+                                                        <div class="text-[10px] text-indigo-300 font-bold uppercase mb-1">買い手 (4C)</div>
+                                                        <p class="text-sm text-indigo-700 font-medium jp-text">{{ cleanText(res.data[key].c) }}</p>
+                                                    </div>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </div>
+
+                                    <!-- VALUES -->
+                                    <div v-else-if="res.type === 'VALUES'" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div class="bg-cyan-50 p-5 rounded-lg border border-cyan-100 text-center flex flex-col h-full">
+                                            <span class="material-icons-round text-3xl text-cyan-500 mb-2">settings</span>
+                                            <h3 class="font-bold text-cyan-800 mb-2">機能的価値</h3>
+                                            <p class="text-sm text-slate-600 jp-text flex-grow">{{ cleanText(res.data.functional_value) }}</p>
+                                        </div>
+                                        <div class="bg-pink-50 p-5 rounded-lg border border-pink-100 text-center flex flex-col h-full shadow-sm">
+                                            <span class="material-icons-round text-3xl text-pink-500 mb-2">favorite</span>
+                                            <h3 class="font-bold text-pink-800 mb-2">情緒的価値</h3>
+                                            <p class="text-sm text-slate-600 jp-text flex-grow">{{ cleanText(res.data.emotional_value) }}</p>
+                                        </div>
+                                        <div class="bg-teal-50 p-5 rounded-lg border border-teal-100 text-center flex flex-col h-full">
+                                            <span class="material-icons-round text-3xl text-teal-500 mb-2">public</span>
+                                            <h3 class="font-bold text-teal-800 mb-2">社会的価値</h3>
+                                            <p class="text-sm text-slate-600 jp-text flex-grow">{{ cleanText(res.data.social_value) }}</p>
+                                        </div>
+                                    </div>
+
+                                    <!-- LOGIC TREE -->
+                                    <div v-else-if="res.type === 'LOGIC'" class="space-y-4">
+                                        <div class="flex flex-col md:flex-row gap-4 items-stretch">
+                                            <div class="md:w-1/4 bg-slate-100 p-4 rounded-lg border-l-4 border-slate-500 flex flex-col justify-center shadow-sm">
+                                                <h4 class="font-bold text-slate-700 mb-2 text-sm flex items-center"><span class="material-icons-round text-base mr-1">flag</span>課題 (Problem)</h4>
+                                                <p class="text-sm text-slate-700 jp-text">{{ cleanText(res.data.problem) }}</p>
+                                            </div>
+                                            <div class="hidden md:flex flex-col justify-center items-center px-1">
+                                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="tree-connector-svg">
+                                                    <path d="M5 12H19M19 12L12 5M19 12L12 19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                                </svg>
+                                            </div>
+                                            <div class="md:w-1/3 bg-blue-50 p-4 rounded-lg border-l-4 border-blue-500 flex flex-col shadow-sm">
+                                                <h4 class="font-bold text-blue-700 mb-2 text-sm flex items-center"><span class="material-icons-round text-base mr-1">account_tree</span>原因の分解 (Breakdown)</h4>
+                                                <ul class="list-disc list-inside space-y-2 text-sm text-slate-700 jp-text flex-grow">
+                                                    <li v-for="item in res.data.breakdown">{{ cleanText(item) }}</li>
+                                                </ul>
+                                            </div>
+                                            <div class="hidden md:flex flex-col justify-center items-center px-1">
+                                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="tree-connector-svg">
+                                                    <path d="M5 12H19M19 12L12 5M19 12L12 19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                                </svg>
+                                            </div>
+                                            <div class="md:w-1/3 bg-green-50 p-4 rounded-lg border-l-4 border-green-500 flex flex-col shadow-sm">
+                                                <h4 class="font-bold text-green-700 mb-2 text-sm flex items-center"><span class="material-icons-round text-base mr-1">lightbulb</span>解決策 (Solutions)</h4>
+                                                <ul class="list-disc list-inside space-y-2 text-sm text-slate-700 jp-text flex-grow">
+                                                    <li v-for="item in res.data.solutions">{{ cleanText(item) }}</li>
+                                                </ul>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- AISAS / AIDMA -->
+                                    <div v-else-if="['AISAS', 'AIDMA'].includes(res.type)">
+                                        <div class="flex flex-col md:flex-row justify-between items-stretch gap-4 overflow-x-auto pb-4">
+                                            <div v-for="(step, idx) in res.data.steps" class="arrow-step flex-1 min-w-[140px] bg-white border border-slate-200 rounded-xl p-4 shadow-sm relative hover:-translate-y-1 transition-transform">
+                                                <div class="text-center mb-3"><span class="inline-block px-3 py-1 bg-slate-800 text-white text-xs font-bold rounded-full mb-2">{{ formatKey(step.phase) }}</span></div>
+                                                <div class="space-y-3">
+                                                    <div><div class="text-[10px] text-slate-400 uppercase font-bold">顧客心理</div><p class="text-xs text-slate-700 jp-text">{{ cleanText(step.mindset) }}</p></div>
+                                                    <div><div class="text-[10px] text-slate-400 uppercase font-bold">施策</div><p class="text-xs text-indigo-600 font-bold jp-text">{{ cleanText(step.action) }}</p></div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Default View for Others -->
+                                    <div v-else class="grid grid-cols-1 gap-4">
+                                        <div v-for="(val, key) in res.data" v-if="key !== 'strategic_insight'" class="bg-slate-50 p-4 rounded-lg border border-slate-100">
+                                            <h4 class="font-bold text-slate-700 mb-2 capitalize">{{ formatKey(key) }}</h4>
+                                            <div v-if="Array.isArray(val)" class="space-y-1"><p v-for="v in val" class="text-sm text-slate-600 flex items-start gap-2"><span class="text-slate-400 mt-1">•</span>{{ cleanText(v) }}</p></div>
+                                            <p v-else class="text-sm text-slate-600 whitespace-pre-wrap jp-text">{{ cleanText(val) }}</p>
+                                        </div>
+                                    </div>
+
+                                    <!-- STRATEGIC INSIGHT -->
+                                    <div v-if="res.data.strategic_insight" class="mt-8 bg-yellow-50 border border-yellow-200 p-6 rounded-xl shadow-sm relative overflow-hidden">
+                                        <div class="absolute top-0 right-0 p-4 opacity-10 pointer-events-none"><span class="material-icons-round text-6xl text-yellow-600">lightbulb</span></div>
+                                        <h4 class="text-yellow-800 font-bold text-base flex items-center mb-4 relative z-10">
+                                            <span class="material-icons-round text-yellow-600 mr-2 text-xl">lightbulb</span>
+                                            具体的なデジタルマーケティング施策
+                                        </h4>
+                                        <!-- jp-textクラスにより改行が反映される -->
+                                        <div class="text-sm text-slate-800 leading-loose jp-text relative z-10">
+                                            {{ cleanText(res.data.strategic_insight) }}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </transition-group>
+                </div>
+            </section>
+        </main>
+    </div>
+</div>
+
+<script>
+    const { createApp, ref, reactive, onMounted } = Vue;
+
+    // --- Supabase Configuration ---
+    const SUPABASE_URL = 'https://zflsgqzuvcnahxmthjpk.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpmbHNncXp1dmNuYWh4bXRoanBrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE1MTE1NzMsImV4cCI6MjA2NzA4NzU3M30.P1dLtsIorP7PoKkL97UCJ3UmIm_OQFu0NPJNmCOZV1I';
+    
+    // Initialize Supabase if available
+    const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+
+    // Translation Map
+    const translationMap = {
+        // SWOT
+        strengths: '強み (Strengths)',
+        weaknesses: '弱み (Weaknesses)',
+        opportunities: '機会 (Opportunities)',
+        threats: '脅威 (Threats)',
+        strategies: '戦略オプション',
+        // PEST
+        politics: '政治 (Politics)',
+        economy: '経済 (Economy)',
+        society: '社会 (Society)',
+        technology: '技術 (Technology)',
+        // 3C
+        customer: '市場・顧客',
+        competitor: '競合',
+        company: '自社',
+        winning_zone: '勝ち筋 (KFS)',
+        // 5F
+        new_entrants: '新規参入の脅威',
+        suppliers: '売り手の交渉力',
+        buyers: '買い手の交渉力',
+        substitutes: '代替品の脅威',
+        rivalry: '業界内の競争',
+        // STP
+        segmentation: 'セグメンテーション',
+        targeting: 'ターゲティング',
+        positioning: 'ポジショニング',
+        // 4P/4C
+        product: '製品',
+        price: '価格',
+        place: '流通',
+        promotion: '販促',
+        p: '売り手視点',
+        c: '買い手視点',
+        // VALUES
+        functional_value: '機能的価値',
+        emotional_value: '情緒的価値',
+        social_value: '社会的価値',
+        // LOGIC
+        problem: '課題',
+        breakdown: '分解',
+        solutions: '解決策',
+        // AISAS/AIDMA
+        Attention: '認知・注目 (Attention)',
+        Interest: '関心 (Interest)',
+        Search: '検索 (Search)',
+        Action: '行動 (Action)',
+        Share: '共有 (Share)',
+        Desire: '欲求 (Desire)',
+        Memory: '記憶 (Memory)',
+        mindset: '顧客心理',
+        action: '施策',
+        // General
+        targetName: '企業名',
+        model: 'AIモデル',
+    };
+
+    createApp({
+        setup() {
+            // Auth State
+            const user = ref(null);
+            const email = ref('');
+            const password = ref('');
+            // const rememberEmail = ref(false); // REMOVED: Checkbox logic
+            const isSignUp = ref(false);
+            const authLoading = ref(false);
+            const authMessage = ref('');
+            const authMessageType = ref('');
+
+            // App State
+            const apiUrl = 'https://proxy-gemini2-369747635095.asia-northeast1.run.app'; 
+            const modelName = ref('gemini-2.5-flash');
+            const isLoading = ref(false);
+            const results = ref([]);
+            const toast = reactive({ show: false, message: '', type: 'success' });
+            
+            const targetName = ref('');
+            const targetUrl = ref('');
+            const competitor1 = ref('');
+            const competitor2 = ref('');
+            const competitor3 = ref('');
+            const referenceUrl = ref('');
+            const details = ref('');
+
+            // --- Authentication Logic ---
+            onMounted(() => {
+                if (supabaseClient) {
+                    // Check active session
+                    supabaseClient.auth.getSession().then(({ data: { session } }) => {
+                        validateAndSetUser(session?.user);
+                    });
+
+                    // Listen for changes
+                    supabaseClient.auth.onAuthStateChange((_event, session) => {
+                        validateAndSetUser(session?.user);
+                    });
+                    
+                    // REMOVED: localStorage email restoration
+                }
+            });
+
+            const validateAndSetUser = async (sessionUser) => {
+                if (sessionUser) {
+                    if (!sessionUser.email.endsWith('@gendai-a.co.jp')) {
+                        console.warn("Unauthorized domain. Logging out.");
+                        await supabaseClient.auth.signOut();
+                        user.value = null;
+                        alert("不正なドメインのアカウントです。ログアウトしました。");
+                    } else {
+                        user.value = sessionUser;
+                    }
+                } else {
+                    user.value = null;
+                }
+            };
+
+            const toggleAuthMode = () => {
+                isSignUp.value = !isSignUp.value;
+                authMessage.value = '';
+            };
+
+            const handleAuth = async () => {
+                authMessage.value = '';
+                authMessageType.value = '';
+
+                // Domain check
+                if (!email.value.endsWith('@gendai-a.co.jp')) {
+                    authMessage.value = '許可されていないドメインです。@gendai-a.co.jp のメールアドレスのみ利用可能です。';
+                    authMessageType.value = 'error';
+                    return;
+                }
+
+                if (!supabaseClient) {
+                    authMessage.value = '認証クライアントの初期化に失敗しました。';
+                    authMessageType.value = 'error';
+                    return;
+                }
+
+                authLoading.value = true;
+                
+                // REMOVED: localStorage logic
+
+                try {
+                    if (isSignUp.value) {
+                        const { error } = await supabaseClient.auth.signUp({ 
+                            email: email.value, 
+                            password: password.value,
+                            options: { emailRedirectTo: window.location.href }
+                        });
+                        if (error) throw error;
+                        authMessage.value = '確認メールを送信しました。メール内のリンクをクリックしてください。';
+                        authMessageType.value = 'success';
+                    } else {
+                        const { error } = await supabaseClient.auth.signInWithPassword({ 
+                            email: email.value, 
+                            password: password.value 
+                        });
+                        if (error) throw error;
+                        // onAuthStateChange will handle user setting
+                    }
+                } catch (error) {
+                    authMessage.value = error.message;
+                    authMessageType.value = 'error';
+                } finally {
+                    authLoading.value = false;
+                }
+            };
+
+            const handleLogout = async () => {
+                if (confirm('ログアウトしますか？')) {
+                    if (supabaseClient) await supabaseClient.auth.signOut();
+                    user.value = null;
+                }
+            };
+
+            // --- App Logic ---
+            const showToast = (msg, type = 'success') => { toast.message = msg; toast.type = type; toast.show = true; setTimeout(() => { toast.show = false; }, 3000); };
+            const toggleEdit = (index) => results.value[index].isEditing = !results.value[index].isEditing;
+            const removeResult = (index) => results.value.splice(index, 1);
+            const clearResults = () => { if(confirm('全結果を削除しますか？')) results.value = []; };
+            
+            const formatKey = (key) => {
+                if (!key) return '';
+                if (translationMap[key]) return translationMap[key];
+                return key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            };
+
+            const get4CLabel = (key) => {
+                const map = {
+                    'product': '顧客価値 (Customer Value)',
+                    'price': 'コスト (Cost)',
+                    'place': '利便性 (Convenience)',
+                    'promotion': '対話 (Communication)'
+                };
+                return map[key] || '買い手 (4C)';
+            };
+
+            const cleanText = (text) => {
+                if (!text) return '';
+                return text.toString()
+                    .replace(/\*\*/g, '')
+                    .replace(/^###\s/gm, '')
+                    .replace(/`/g, '');
+            };
+
+            const updateArrayData = (res, key, text) => { res.data[key] = text.split('\n').filter(line => line.trim() !== ''); };
+            const updateObjectData = (res, key, text) => { try { res.data[key] = JSON.parse(text); } catch(e) {} };
+
+            const downloadCSV = (result) => {
+                const rows = [['Category', 'Content']];
+                const processValue = (val) => {
+                    if (Array.isArray(val)) return val.join('\n');
+                    if (typeof val === 'object' && val !== null) return JSON.stringify(val);
+                    return val;
+                };
+                rows.push(['Analysis Type', result.type_label]);
+                rows.push(['Target', result.targetName || 'N/A']);
+                rows.push(['Timestamp', result.timestamp]);
+                rows.push(['', '']); 
+
+                for (const [key, value] of Object.entries(result.data)) {
+                    rows.push([formatKey(key), processValue(value)]);
+                }
+                const csvContent = "\uFEFF" + rows.map(e => e.map(i => `"${String(i).replace(/"/g, '""')}"`).join(",")).join("\r\n");
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.setAttribute("href", url);
+                link.setAttribute("download", `${result.type}_Analysis_${new Date().toISOString().slice(0,10)}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            };
+
+            const getPrompt = (type) => {
+                const comps = [competitor1.value, competitor2.value, competitor3.value].filter(Boolean).join(', ') || '特になし';
+                const baseInfo = `【分析対象企業】: ${targetName.value}
+【対象URL】: ${targetUrl.value}
+【競合企業】: ${comps}
+【参考サイトURL】: ${referenceUrl.value || 'なし'}
+【重要：事業詳細・分析に関する要望・補足】: ${details.value || 'なし'}`;
+
+                const strategicInst = `
+                【最重要指示】
+                - 「事業詳細・分析に関する要望・補足」の内容を分析に強く反映させてください。
+                - **strategic_insight** フィールドには、この各種マーケティングフレームワークの分析結果に基づいた「**Web広告・デジタルマーケティング領域での具体的な実行施策**」を提案してください。
+                - 抽象的な表現は避け、具体的な媒体名や施策名（検索広告、各種ディスプレイ広告、DV360（バナー広告）、Instagram広告、LINE広告、GEO広告、Smartnews広告、X広告、TVer広告、GA4分析、SEO、Clarityを活用したサイト分析、等）や、ターゲット設定を含めて、ランダムに提案内容を生成してください。提案項目は3つ～5つまでにするようにしてください。DV360の提案内容は極力生成されるように考慮してください。
+                - **重要：** 「具体的なデジタルマーケティング施策」は見やすく読みやすくするため、**番号付きリスト（1. 2. 3. ...）** で出力するなど工夫してください。また、各項目の間には**空白行**を入れてください。併せて、句読点（。の部分）で**改行**させることで見やすい文章が生成されるように細心の注意を払ってください。
+                - **重要：** 出力するJSONデータ内の文字列に改行を含める場合は、必ずエスケープシーケンス（\\n）を使用してください。生の改行コードはJSONパースエラーの原因となるため、絶対に使用しないでください。`;
+
+                const schemas = {
+                    'SWOT': `{"strengths":["..."], "weaknesses":["..."], "opportunities":["..."], "threats":["..."], "strategies":{"積極戦略（so_active）":"...", "差別化戦略（st_differentiation）":"...", "改善戦略（wo_improvement）":"...", "致命傷回避戦略（wt_defense）":"..."}, "strategic_insight":"..."}`,
+                    'PEST': `{"politics":"...", "economy":"...", "society":"...", "technology":"...", "strategic_insight":"..."}`,
+                    '5F': `{"new_entrants":"...", "suppliers":"...", "buyers":"...", "substitutes":"...", "rivalry":"...", "strategic_insight":"..."}`,
+                    '3C': `{"customer":["..."], "competitor":["..."], "company":["..."], "winning_zone":"...", "strategic_insight":"..."}`,
+                    'STP': `{"segmentation":"...", "targeting":"...", "positioning":"...", "strategic_insight":"..."}`,
+                    '4P4C': `{"product":{"p":"...","c":"..."}, "price":{"p":"...","c":"..."}, "place":{"p":"...","c":"..."}, "promotion":{"p":"...","c":"..."}, "strategic_insight":"..."}`,
+                    'VALUES': `{"functional_value":"...", "emotional_value":"...", "social_value":"...", "strategic_insight":"..."}`,
+                    'LOGIC': `{"problem":"...", "breakdown":["..."], "solutions":["..."], "strategic_insight":"..."}`,
+                    'AISAS': `{"steps":[{"phase":"Attention","mindset":"...","action":"..."},...], "strategic_insight":"..."}`,
+                    'AIDMA': `{"steps":[{"phase":"Attention","mindset":"...","action":"..."},...], "strategic_insight":"..."}`
+                };
+                return `あなたは世界最高峰のマーケティングAIです。以下の分析を行い、指定された**JSON形式のみ**を出力してください。
+                
+                ${baseInfo}
+                ${strategicInst}
+                
+                【重要なお願い】
+                - 出力文章は**簡潔に、読みやすく**まとめてください。
+                - **Markdown記号（**太字**など）は絶対に使用しないでください**。ただし、箇条書きのハイフンや数字は使用して構いません。
+                - 3C分析などのリストにおいて、「強み：」「弱み：」などのプレフィックス（接頭辞）は付けないでください。
+                - ロジックツリーなどの出力で矢印記号「⇒」等は使わず、文章のみにしてください。
+                - 日本語で出力してください。
+                
+                【分析フレームワーク】: ${type}
+                【出力JSONフォーマット】:
+                ${schemas[type] || "{}"}`;
+            };
+
+            const analyze = async (type) => {
+                if (!targetName.value && !targetUrl.value && !details.value) { showToast('企業名、URL、または事業詳細を入力してください', 'error'); return; }
+                isLoading.value = true;
+                const prompt = getPrompt(type);
+                
+                const labels = {
+                    'SWOT': 'クロスSWOT分析', 'PEST': 'PEST分析', '5F': '5F分析', '3C': '3C分析',
+                    'STP': 'STP分析', '4P4C': '4P/4C分析', 'VALUES': '機能価値・情緒価値・社会的価値', 'LOGIC': 'ロジックツリー',
+                    'AISAS': 'AISASモデル', 'AIDMA': 'AIDMAモデル'
+                };
+
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ prompt, modelName: modelName.value, targetUrl: targetUrl.value })
+                    });
+                    if (!response.ok) throw new Error("API Error");
+                    const resJson = await response.json();
+                    let cleanText = resJson.text.trim().replace(/^```json/, '').replace(/^```/, '').replace(/```$/, '');
+                    
+                    let parsedData;
+                    try {
+                        parsedData = JSON.parse(cleanText);
+                    } catch (e) {
+                        console.warn("Initial JSON parse failed. Attempting to fix bad control characters...", e);
+                        const fixedText = cleanText.replace(/"([^"\\]*(\\.[^"\\]*)*)"/g, (match) => {
+                            return match.replace(/\n/g, "\\n").replace(/\r/g, "");
+                        });
+                        parsedData = JSON.parse(fixedText);
+                    }
+
+                    results.value.unshift({
+                        id: Date.now(),
+                        type: type,
+                        type_label: labels[type] || type,
+                        data: parsedData,
+                        isEditing: false, 
+                        targetName: targetName.value,
+                        model: modelName.value,
+                        timestamp: new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'})
+                    });
+                    showToast('分析完了');
+                    setTimeout(() => document.getElementById('results-area').scrollIntoView({ behavior: 'smooth' }), 100);
+                } catch (error) {
+                    console.error(error);
+                    showToast('分析エラー: AIからの応答を解析できませんでした', 'error');
+                } finally { isLoading.value = false; }
+            };
+
+            return { 
+                // Auth
+                user, email, password, isSignUp, authLoading, authMessage, authMessageType,
+                handleAuth, toggleAuthMode, handleLogout,
+                // App
+                modelName, targetName, targetUrl, competitor1, competitor2, competitor3, referenceUrl, details, isLoading, results, toast, toggleEdit, analyze, removeResult, clearResults, updateArrayData, updateObjectData, formatKey, downloadCSV, cleanText, get4CLabel 
+            };
+        }
+    }).mount('#app');
+</script>
+</body>
+</html>
