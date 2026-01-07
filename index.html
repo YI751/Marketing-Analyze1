@@ -566,6 +566,7 @@
         // General
         targetName: '企業名',
         model: 'AIモデル',
+        strategic_insight: '具体的なデジタルマーケティング施策'
     };
 
     createApp({
@@ -607,8 +608,6 @@
                     supabaseClient.auth.onAuthStateChange((_event, session) => {
                         validateAndSetUser(session?.user);
                     });
-                    
-                    // REMOVED: localStorage email restoration
                 }
             });
 
@@ -650,8 +649,6 @@
                 }
 
                 authLoading.value = true;
-                
-                // REMOVED: localStorage logic
 
                 try {
                     if (isSignUp.value) {
@@ -669,7 +666,6 @@
                             password: password.value 
                         });
                         if (error) throw error;
-                        // onAuthStateChange will handle user setting
                     }
                 } catch (error) {
                     authMessage.value = error.message;
@@ -698,16 +694,6 @@
                 return key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
             };
 
-            const get4CLabel = (key) => {
-                const map = {
-                    'product': '顧客価値 (Customer Value)',
-                    'price': 'コスト (Cost)',
-                    'place': '利便性 (Convenience)',
-                    'promotion': '対話 (Communication)'
-                };
-                return map[key] || '買い手 (4C)';
-            };
-
             const cleanText = (text) => {
                 if (!text) return '';
                 return text.toString()
@@ -719,22 +705,61 @@
             const updateArrayData = (res, key, text) => { res.data[key] = text.split('\n').filter(line => line.trim() !== ''); };
             const updateObjectData = (res, key, text) => { try { res.data[key] = JSON.parse(text); } catch(e) {} };
 
+            // Fixed CSV Download Logic
             const downloadCSV = (result) => {
-                const rows = [['Category', 'Content']];
-                const processValue = (val) => {
-                    if (Array.isArray(val)) return val.join('\n');
-                    if (typeof val === 'object' && val !== null) return JSON.stringify(val);
+                const rows = [['項目 (Category)', '内容 (Content)']];
+
+                // Helper to format values recursively
+                const formatValue = (val) => {
+                    if (val === null || val === undefined) return '';
+                    
+                    // Case: Array
+                    if (Array.isArray(val)) {
+                        if (val.length === 0) return '';
+                        // If array of objects (like AISAS steps)
+                        if (typeof val[0] === 'object' && val[0] !== null) {
+                            return val.map(item => {
+                                return Object.entries(item).map(([k, v]) => {
+                                    return `[${formatKey(k)}]: ${v}`;
+                                }).join('\n');
+                            }).join('\n--------------------------------\n');
+                        }
+                        // If array of strings (like SWOT strengths)
+                        return val.join('\n');
+                    }
+                    
+                    // Case: Object (like SWOT strategies, 4P nested)
+                    if (typeof val === 'object') {
+                         return Object.entries(val).map(([k, v]) => {
+                             const label = formatKey(k);
+                             // Handle nested object inside object (e.g. 4P inside product)
+                             if (typeof v === 'object' && v !== null) {
+                                 return `【${label}】\n` + Object.entries(v).map(([subK, subV]) => `  - ${formatKey(subK)}: ${subV}`).join('\n');
+                             }
+                             return `[${label}]: ${v}`;
+                         }).join('\n\n');
+                    }
+
+                    // Case: String/Number
                     return val;
                 };
-                rows.push(['Analysis Type', result.type_label]);
-                rows.push(['Target', result.targetName || 'N/A']);
-                rows.push(['Timestamp', result.timestamp]);
+
+                // Metadata rows
+                rows.push(['分析タイプ', result.type_label]);
+                rows.push(['対象企業/サービス', result.targetName || 'なし']);
+                rows.push(['日時', result.timestamp]);
                 rows.push(['', '']); 
 
+                // Main Data Loop
                 for (const [key, value] of Object.entries(result.data)) {
-                    rows.push([formatKey(key), processValue(value)]);
+                    rows.push([formatKey(key), formatValue(value)]);
                 }
-                const csvContent = "\uFEFF" + rows.map(e => e.map(i => `"${String(i).replace(/"/g, '""')}"`).join(",")).join("\r\n");
+
+                const csvContent = "\uFEFF" + rows.map(e => e.map(i => {
+                    // Escape quotes and wrap in quotes for Excel/Numbers compatibility
+                    return `"${String(i).replace(/"/g, '""')}"`;
+                }).join(",")).join("\r\n");
+
                 const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                 const url = URL.createObjectURL(blob);
                 const link = document.createElement("a");
@@ -845,11 +870,10 @@
                 user, email, password, isSignUp, authLoading, authMessage, authMessageType,
                 handleAuth, toggleAuthMode, handleLogout,
                 // App
-                modelName, targetName, targetUrl, competitor1, competitor2, competitor3, referenceUrl, details, isLoading, results, toast, toggleEdit, analyze, removeResult, clearResults, updateArrayData, updateObjectData, formatKey, downloadCSV, cleanText, get4CLabel 
+                modelName, targetName, targetUrl, competitor1, competitor2, competitor3, referenceUrl, details, isLoading, results, toast, toggleEdit, analyze, removeResult, clearResults, updateArrayData, updateObjectData, formatKey, downloadCSV, cleanText 
             };
         }
     }).mount('#app');
 </script>
 </body>
-
 </html>
